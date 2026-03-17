@@ -1,0 +1,21 @@
+# This file stores the simple information,
+# with which version of which template this repository/folder was created with
+
+template:
+  name: "[ECML Sphinx Docs Template]
+  version: "1.0" 
+
+  cookiecutter_variables:
+    full_name: MCLProbability
+    email: 240669060+mclprobability@users.noreply.github.com
+    mcl_project: Equayes
+    __repository_name: Equayes
+    __pkg_name: equayes
+    source_code_directory: equayes
+    license: MIT
+    
+    gitlab_remote_url: https://github.com/mclprobability/Equayes.git
+    _docs_folder_name: docs
+    _triggered_by_ecml_data_science_project_template: True
+    _ECML_Template: [ECML Data-Science Project Template]
+    _ECML_Template_Version: 0.9.6.dev5+gdefcb7c

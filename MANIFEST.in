@@ -1,0 +1,2 @@
+include equayes/config/*.yml
+recursive-include equayes/logs *
