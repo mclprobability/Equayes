@@ -1,0 +1,63 @@
+version: 1
+
+handlers:
+  console:
+    class: logging.StreamHandler
+    level: DEBUG
+    formatter: brief
+    stream: ext://sys.stdout
+  equayes_file_handler:
+    class: logging.handlers.TimedRotatingFileHandler
+    level: DEBUG
+    formatter: precise
+    filename: debug.log
+    backupCount: 20
+    encoding: utf8
+    when: midnight
+  debug_all_file_handler:
+    class: logging.handlers.TimedRotatingFileHandler
+    level: DEBUG
+    formatter: precise
+    filename: debug_all.log
+    backupCount: 20
+    encoding: utf8
+    when: midnight
+  error_file_handler:
+    class: logging.handlers.TimedRotatingFileHandler
+    level: WARNING
+    formatter: precise
+    filename: errors.log
+    backupCount: 20
+    encoding: utf8
+    when: midnight
+    delay: True
+  unittest_file_handler:
+    class: logging.handlers.RotatingFileHandler
+    level: DEBUG
+    formatter: precise
+    filename: unittests.log
+    backupCount: 20
+    encoding: utf8
+    maxBytes: 524288
+    delay: True
+
+formatters:
+  brief:
+    format: "%(module)s - %(levelname)s - %(message)s"
+  precise:
+    format: "%(asctime)s - %(hostname)s - %(module)s - function: %(funcName)s() - %(levelname)s - %(message)s"
+
+root:
+  level: NOTSET
+  handlers: [debug_all_file_handler, error_file_handler]
+  propogate: yes
+
+loggers:
+  equayes: # This logger is used, when using "utils.log.get_logger()"
+    level: DEBUG
+    handlers: [console, equayes_file_handler]
+    propagate: yes
+  unittest:
+    level: DEBUG
+    handlers: [unittest_file_handler]
+    propagate: no
