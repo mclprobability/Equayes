@@ -1,6 +1,6 @@
 # Equayes
 
-The **Equayes** library converts a deterministic SymPy expression into a probabilistic model and performs Bayesian (MCMC) inference on the expression's numeric constants. This enables uncertainty quantification over parameters, credible intervals for predictions, principled noise estimation, and robustness against overfitting — while keeping your original symbolic model structure.
+**Equayes** converts a deterministic SymPy expression into a probabilistic model and performs Bayesian (MCMC) inference on the expression's numeric constants. This enables uncertainty quantification over parameters, credible intervals for predictions, principled noise estimation, and robustness against overfitting — while keeping the original symbolic model structure.
 
 The project exposes the scikit-learn style estimator **Equayes** that automates replacing numeric constants with learnable latent variables, compiles the symbolic model into a Pyro probabilistic model, and runs MCMC inference.
 
@@ -30,7 +30,7 @@ To illustrate the practical gain, we consider noisy observations generated from 
    </table>
 </div>
 
-<a href="#fig_reconstruction">Figure 1</a> shows that the deterministic solution provides a single reconstruction and therefore hides epistemic uncertainty caused by limited support in parts of the input domain. In contrast, the Bayesian fit by Equayes yields a posterior predictive mean (variance caused by parameter uncertainty only), and full posterior predictive distribution  together with  95 % credible intervals. In the example the credible intervals widen substantially outside of the training region reflecting the uncertainty inherent to extrapolation.
+<a href="#fig_reconstruction">Figure 1</a> shows that the deterministic solution provides a single reconstruction and therefore hides epistemic uncertainty caused by limited support in parts of the input domain. In contrast, the Bayesian fit by Equayes yields a posterior predictive mean (variance caused by parameter uncertainty only), and full posterior predictive distribution  together with  95 % credible intervals. In the example, the credible intervals widen substantially outside of the training region reflecting the uncertainty inherent to extrapolation.
 
 This problem and implementation can be found in [showcase_equayes.ipynb](notebooks/showcase_equayes.ipynb)
 
@@ -58,7 +58,7 @@ This approach ensures that any changes you make to the code or documentation are
 We are very happy about each and every contribution! Please review our [Contribution Guidelines](CONTRIBUTING_GitHub.md) prior to your work.
 
 ## Minimal Example
-Minimal example usage of the tool - a more comprehensive example is provided in [showcase_equayes.ipynb](notebooks/showcase_equayes.ipynb). 
+Minimal example usage of Equayes — a more comprehensive example is provided in [showcase_equayes.ipynb](notebooks/showcase_equayes.ipynb). 
 
 ```python
 import sympy as sp
@@ -74,7 +74,7 @@ expr = 2. * x + 5.
 X = torch.randn((4,1))    # shape (4,1)
 y = torch.randn((4,1))    # shape (4,1)
 
-# 3) Init the estimator and run MCMC (small number of samples for demonstration)
+# 3) Init Equayes and run MCMC (small number of samples for demonstration)
 equayes = Equayes(expr, input_symbols=[x], output_dim=1, mcmc_samples=200, mcmc_warmup_samples=200)
 
 # 4) Fit and predict
