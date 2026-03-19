@@ -3,6 +3,7 @@ __pycache__
 .ipynb_checkpoints
 .pytest_cache
 **.code-workspace
+.vscode
 
 docs/build/*
 
@@ -11,6 +12,7 @@ docs/build/*
 build
 equayes/__version__.py
 equayes/logs/*
+!equayes/logs/.gitkeep
 
 # ignore data folder, include empty folders, see .gitignore in each subfolder
 data/*
