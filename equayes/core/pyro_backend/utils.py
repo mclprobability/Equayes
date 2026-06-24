@@ -1,15 +1,19 @@
 import arviz as az
 import numpy as np
 import pyro
+import sympy as sp
 import torch
 from pyro.infer import Predictive
+import xarray
 
 from equayes.utils import log
 
 logger = log.getLogger("Pyro Utils")
 
 
-def get_initial_param_dict(exp_param_values: dict, n_chains, param_prefix="theta_") -> dict[str, torch.Tensor]:
+def get_initial_param_dict(
+    exp_param_values: dict, latent_variables: list[sp.Symbol], n_chains, param_prefix="theta_"
+) -> dict[str, torch.Tensor]:
     """Generates initial parameter tensors for the MCMC chains.
 
     Args:
@@ -24,21 +28,29 @@ def get_initial_param_dict(exp_param_values: dict, n_chains, param_prefix="theta
         f"{param_prefix}{k}": (torch.tensor([float(v)]).repeat((n_chains, 1)) if n_chains > 1 else torch.tensor([float(v)]))
         for k, v in exp_param_values.items()
     }
+    for latent_symbol in latent_variables:
+        initial_params[f"{param_prefix}{latent_symbol.name}_unconstrained"] = (
+            torch.rand((n_chains, 1)) if n_chains > 1 else torch.rand((1,))
+        )
+
     initial_params["epsilon"] = (
         torch.tensor([float(1e-2)]).repeat((n_chains, 1)) if n_chains > 1 else torch.tensor([float(1e-2)])
     )
     return initial_params
 
 
-def guide_to_inference_data(model, guide, *args, num_samples=3000, parallel=True, **kwargs):
+def guide_to_inference_data(model, guide, *args, num_samples=3000, parallel=True, **kwargs) -> xarray.DataTree:
     """
-    Converts a trained Pyro SVI guide into an ArviZ InferenceData object.
+    Converts a trained Pyro SVI guide into an ArviZ compatible inference xarray.DataTree object.
 
     Args:
         model: The Pyro model.
         guide: The trained Pyro guide.
         *args, **kwargs: The arguments passed to the model/guide during inference.
         num_samples: Number of draws to take from the guide.
+
+    Returns:
+        xarray.DataTree: A DataTree containing the fields: "posterior", "posterior_predictive" and "observed_data".
     """
     predictive = Predictive(model, guide=guide, num_samples=num_samples, parallel=parallel)
     samples = predictive(*args, **kwargs)
@@ -69,10 +81,12 @@ def guide_to_inference_data(model, guide, *args, num_samples=3000, parallel=True
         observed_data_dict[site] = val
 
     # 5. Compile into ArviZ InferenceData
-    idata = az.from_dict(
-        posterior=posterior_dict,
-        posterior_predictive=posterior_predictive_dict,
-        observed_data=observed_data_dict,
+    inference_dt = az.from_dict(
+        {
+            "posterior": posterior_dict,
+            "posterior_predictive": posterior_predictive_dict,
+            "observed_data": observed_data_dict,
+        }
     )
 
-    return idata
+    return inference_dt

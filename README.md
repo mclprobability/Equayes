@@ -1,15 +1,21 @@
 # Equayes
 
-**Equayes** converts a deterministic SymPy expression into a probabilistic model and performs Bayesian (MCMC) inference on the expression's numeric constants. This enables uncertainty quantification over parameters, credible intervals for predictions, principled noise estimation, and robustness against overfitting — while keeping the original symbolic model structure.
+**Equayes** converts a deterministic SymPy expression into a probabilistic model and performs Bayesian (MCMC & VI) inference on the expression's numeric constants. This enables uncertainty quantification over parameters, credible intervals for predictions, principled noise estimation, and robustness against overfitting — while keeping the original symbolic model structure.
 
 The project exposes the scikit-learn style estimator **Equayes** that automates replacing numeric constants with learnable latent variables, compiles the symbolic model into a Pyro probabilistic model, and runs MCMC inference.
 
 ## Highlights
+
 - Converts an equation given as SymPy expressions to a probabilsitic (Pyro) model. See [create_pyro_model()](equayes/core/pyro_backend/sympy_to_pyro.py) in sympy_to_pyro.py
 - Simple scikit-learn style API: Equayes(expr, input_symbols, output_dim) with fit(), predict(), get_posterior(), and inference_diagnostics().
-- Supports any parameterized function $f_\theta:(x_1, x_2, ..., x_N) \rightarrow (y_1, y_2, ..., y_M)$ with parameters $\theta \in \mathcal{R}^K$ and scalar inputs $x_i, y_j \in \mathcal{R} \text{, }\forall i, j$. 
+- Supports any parameterized function $f_\theta:(x_1, x_2, ..., x_N) \rightarrow (y_1, y_2, ..., y_M)$ with parameters $\theta \in \mathcal{R}^K$ and scalar inputs $x_i, y_j \in \mathcal{R} \text{, }\forall i, j$.
+
+## Reference
+
+A detailed description of Equayes and theoretical background are provided in: Findenig, C., & Mücke, M. (2026). **Equayes – Democratizing Probabilistic Model Construction and Exploration with Automatic Equation to Bayesian Model Transformation**. Proceedings of the Austrian Symposium on AI, Robotics, and Vision, 3(1), 156–160. <https://proceedings.airov.at/article/id/803/>
 
 ## Show Case
+
 To illustrate the practical gain, we consider noisy observations generated from a sinusoidal ground-truth process $y \sim \mathcal{N}\left(2 * \text{sin}(x) + 3, 1\right)$, $x \in [0, \frac{3}{2}\pi]$ and fit a polynomial surrogate of degree 3. This setup is intentionally misspecified: the polynomial surrogate model cannot represent the true sinusoid exactly, which mirrors most real-world problems in which the available analytical model is useful but not exact.
 
 <div id=fig_reconstruction>
@@ -35,6 +41,7 @@ To illustrate the practical gain, we consider noisy observations generated from 
 This problem and implementation can be found in [showcase_equayes.ipynb](notebooks/showcase_equayes.ipynb)
 
 ## Install the Project
+
 If you want to use this project or wish to contribute, the recommended setup is as follows:
 
 - Clone this repository:
@@ -55,10 +62,12 @@ This approach ensures that any changes you make to the code or documentation are
 > **Note:** Direct pushing to the `main` branch is disabled.  
 
 ## Contributing
+
 We are very happy about each and every contribution! Please review our [Contribution Guidelines](CONTRIBUTING_GitHub.md) prior to your work.
 
 ## Minimal Example
-Minimal example usage of Equayes — a more comprehensive example is provided in [showcase_equayes.ipynb](notebooks/showcase_equayes.ipynb). 
+
+Minimal example usage of Equayes — a more comprehensive example is provided in [showcase_equayes.ipynb](notebooks/showcase_equayes.ipynb).
 
 ```python
 import sympy as sp
@@ -87,5 +96,23 @@ diag = equayes.inference_diagnostics() # MCMC diagnostics
 ```
 
 ### Notes
+
 - y must be 2D (batch, output_dim) and X (if present) must be 2D (batch, features).
 - The compiled Pyro model uses Normal priors for parameters and a HalfNormal prior for observation noise; see [sympy_to_pyro.py](equayes/core/pyro_backend/sympy_to_pyro.py) for details.
+
+## Citation
+
+If you use Equayes, please cite the following paper:
+
+```bibtex
+@article{Findenig2026Equayes,
+  author  = {Christian Findenig and Manfred M{\"u}cke},
+  title   = {Equayes -- Democratizing Probabilistic Model Construction and Exploration with Automatic Equation to Bayesian Model Transformation},
+  journal = {Proceedings of the Austrian Symposium on AI, Robotics, and Vision},
+  year    = {2026},
+  volume  = {3},
+  number  = {1},
+  pages   = {156--160},
+  url     = {https://proceedings.airov.at/article/id/803/}
+} 
+```
