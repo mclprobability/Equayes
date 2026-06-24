@@ -14,6 +14,7 @@ class BaseEquayesTest(unittest.TestCase):
         self,
         expr_sp,
         input_symbols,
+        latent_variables,
         output_dim,
         inference_method_name,
         kernel_name,
@@ -26,6 +27,7 @@ class BaseEquayesTest(unittest.TestCase):
         equayes = Equayes(
             expr_sp,
             input_symbols,
+            latent_variables=latent_variables,
             output_dim=output_dim,
             inference_method_name=inference_method_name,
             kernel_name=kernel_name,
@@ -35,11 +37,12 @@ class BaseEquayesTest(unittest.TestCase):
             jit_compile=False,
         )
         self.assertEqual(
-            len(equayes._exp_param_values),
+            len(equayes._exp_param_values) + len(equayes.latent_variables),
             expected_number_of_latent_variables,
-            f"Equayes transformed {len(equayes._exp_param_values)} parameters to latent variables but expected {expected_number_of_latent_variables}"
+            f"Equayes transformed {len(equayes._exp_param_values) + len(equayes.latent_variables)} parameters to latent variables but expected {expected_number_of_latent_variables}"
             + f"\n latent vars: "
-            + str([f"{k}, {v}" for (k, v) in equayes._exp_param_values.items()]),
+            + str([f"{k}, {v}" for (k, v) in equayes._exp_param_values.items()])
+            + str([f"{k}" for k in equayes.latent_variables]),
         )
 
         equayes.fit(x_train, y_train)
@@ -60,6 +63,7 @@ class BaseEquayesTest(unittest.TestCase):
     def exec_modeling_inference(
         self,
         expr_sp,
+        latent_variables,
         output_dim,
         inference_method_name,
         kernel_name,
@@ -70,6 +74,7 @@ class BaseEquayesTest(unittest.TestCase):
         equayes = Equayes(
             expr_sp,
             [],
+            latent_variables=latent_variables,
             output_dim=output_dim,
             inference_method_name=inference_method_name,
             kernel_name=kernel_name,
@@ -79,11 +84,12 @@ class BaseEquayesTest(unittest.TestCase):
             jit_compile=False,
         )
         self.assertEqual(
-            len(equayes._exp_param_values),
+            len(equayes._exp_param_values) + len(equayes.latent_variables),
             expected_number_of_latent_variables,
-            f"Equayes transformed {len(equayes._exp_param_values)} parameters to latent variables but expected {expected_number_of_latent_variables}"
+            f"Equayes transformed {len(equayes._exp_param_values) + len(equayes.latent_variables)} parameters to latent variables but expected {expected_number_of_latent_variables}"
             + f"\n latent vars: "
-            + str([f"{k}, {v}" for (k, v) in equayes._exp_param_values.items()]),
+            + str([f"{k}, {v}" for (k, v) in equayes._exp_param_values.items()])
+            + str([f"{k}" for k in equayes.latent_variables]),
         )
         equayes.fit(None, y_train)
         equayes.inference_diagnostics()

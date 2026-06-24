@@ -1,7 +1,3 @@
-import inspect
-import unittest
-from datetime import date
-
 import numpy as np
 import sympy as sp
 import torch
@@ -16,7 +12,7 @@ logger = log.getLogger("unittest_TestEquayesInferenceMethodsExecutable")
 
 class TestEquayesDifferentExpressionsExecutable(BaseEquayesTest):
 
-    def test_1d_single_input_no_param(self, inference_method_name="mcmc", kernel_name="nuts"):
+    def test_1d_single_input(self, inference_method_name="mcmc", kernel_name="nuts"):
         x0 = sp.Symbol("x0")
         output_dim = 1
         expr_sp = sp.sin(x0)
@@ -32,6 +28,7 @@ class TestEquayesDifferentExpressionsExecutable(BaseEquayesTest):
         self.exec_regression_inference(
             expr_sp,
             [x0],
+            [],
             output_dim,
             inference_method_name,
             kernel_name,
@@ -42,7 +39,7 @@ class TestEquayesDifferentExpressionsExecutable(BaseEquayesTest):
             expected_number_of_latent_variables=0,
         )
 
-    def test_1d_no_input_single_param(self, inference_method_name="mcmc", kernel_name="nuts"):
+    def test_1d_single_param(self, inference_method_name="mcmc", kernel_name="nuts"):
         output_dim = 1
         # todo: evaluate=False is important, as the sinus is lost otherwise. Does SR return such constructs that we need to keep?
         expr_sp = sp.sin(2.0, evaluate=False)
@@ -57,6 +54,32 @@ class TestEquayesDifferentExpressionsExecutable(BaseEquayesTest):
 
         self.exec_modeling_inference(
             expr_sp,
+            [],
+            output_dim,
+            inference_method_name,
+            kernel_name,
+            y_train,
+            n_predictive_samples,
+            expected_number_of_latent_variables=1,
+        )
+
+    def test_1d_single_latent(self, inference_method_name="mcmc", kernel_name="nuts"):
+        x0 = sp.Symbol("x0")
+        output_dim = 1
+        # todo: evaluate=False is important, as the sinus is lost otherwise. Does SR return such constructs that we need to keep?
+        expr_sp = sp.sin(x0, evaluate=False)
+        expr_torch = lambdify([x0], expr_sp, modules="torch")
+
+        n_predictive_samples = 200
+        n_train, n_test = 10, 100
+        x_train = torch.linspace(1, 10, n_train).view(-1, 1)
+        y_train = torch.tensor(np.sin(2.0)).expand((n_train, 1))
+        x_test = torch.linspace(1, 10, n_test).view(-1, 1)
+        y_test = torch.tensor(np.sin(2.0)).expand((n_test, 1))
+
+        self.exec_modeling_inference(
+            expr_sp,
+            [x0],
             output_dim,
             inference_method_name,
             kernel_name,
@@ -81,6 +104,7 @@ class TestEquayesDifferentExpressionsExecutable(BaseEquayesTest):
         self.exec_regression_inference(
             expr_sp,
             [x0],
+            [],
             output_dim,
             inference_method_name,
             kernel_name,
@@ -89,6 +113,58 @@ class TestEquayesDifferentExpressionsExecutable(BaseEquayesTest):
             x_test,
             n_predictive_samples,
             expected_number_of_latent_variables=1,
+        )
+
+    def test_1d_single_input_single_latent(self, inference_method_name="mcmc", kernel_name="nuts"):
+        x0, lat0 = sp.symbols("x0 lat0")
+        output_dim = 1
+        expr_sp = lat0 * sp.sin(x0) + 1  # integers are not transformed to random variables
+        expr_torch = lambdify([x0, lat0], expr_sp, modules="torch")
+
+        n_predictive_samples = 200
+        n_train, n_test = 10, 100
+        x_train = torch.linspace(1, 10, n_train).view(-1, 1)
+        y_train = torch.randn((n_train, 1))
+        x_test = torch.linspace(1, 10, n_test).view(-1, 1)
+        y_test = torch.randn((n_test, 1))
+
+        self.exec_regression_inference(
+            expr_sp,
+            [x0],
+            [lat0],
+            output_dim,
+            inference_method_name,
+            kernel_name,
+            x_train,
+            y_train,
+            x_test,
+            n_predictive_samples,
+            expected_number_of_latent_variables=1,
+        )
+
+    def test_1d_single_param_single_latent(self, inference_method_name="mcmc", kernel_name="nuts"):
+        lat0 = sp.Symbol("lat0")
+        output_dim = 1
+        # todo: evaluate=False is important, as the sinus is lost otherwise. Does SR return such constructs that we need to keep?
+        expr_sp = sp.sin(2.0 * lat0, evaluate=False)
+        expr_torch = lambdify([lat0], expr_sp, modules="torch")
+
+        n_predictive_samples = 200
+        n_train, n_test = 10, 100
+        x_train = torch.linspace(1, 10, n_train).view(-1, 1)
+        y_train = torch.tensor(np.sin(2.0)).expand((n_train, 1))
+        x_test = torch.linspace(1, 10, n_test).view(-1, 1)
+        y_test = torch.tensor(np.sin(2.0)).expand((n_test, 1))
+
+        self.exec_modeling_inference(
+            expr_sp,
+            [lat0],
+            output_dim,
+            inference_method_name,
+            kernel_name,
+            y_train,
+            n_predictive_samples,
+            expected_number_of_latent_variables=2,
         )
 
     def test_1d_multiple_inputs_multiple_params(self, inference_method_name="mcmc", kernel_name="nuts"):
@@ -107,6 +183,7 @@ class TestEquayesDifferentExpressionsExecutable(BaseEquayesTest):
         self.exec_regression_inference(
             expr_sp,
             [x0, x1],
+            [],
             output_dim,
             inference_method_name,
             kernel_name,
@@ -115,4 +192,31 @@ class TestEquayesDifferentExpressionsExecutable(BaseEquayesTest):
             x_test,
             n_predictive_samples,
             expected_number_of_latent_variables=2,
+        )
+
+    def test_1d_multiple_inputs_multiple_params_multiple_latents(self, inference_method_name="mcmc", kernel_name="nuts"):
+        x0, x1, lat0, lat1 = sp.symbols("x0 x1 lat0 lat1")
+        output_dim = 1
+        expr_sp = 2.0 * lat0 * sp.sin(x0) + 5.0 * sp.cos(lat1 * x1**2)
+        expr_torch = lambdify([x0, x1, lat0, lat1], expr_sp, modules="torch")
+
+        n_predictive_samples = 200
+        n_train, n_test = 10, 100
+        x_train = torch.linspace(1, 10, n_train).view(-1, 1).expand((-1, 2))
+        y_train = torch.randn((n_train, 1))
+        x_test = torch.linspace(1, 10, n_test).view(-1, 1).expand((-1, 2))
+        y_test = torch.randn((n_test, 1))
+
+        self.exec_regression_inference(
+            expr_sp,
+            [x0, x1],
+            [lat0, lat1],
+            output_dim,
+            inference_method_name,
+            kernel_name,
+            x_train,
+            y_train,
+            x_test,
+            n_predictive_samples,
+            expected_number_of_latent_variables=4,
         )

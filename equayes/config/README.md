@@ -9,7 +9,6 @@ From `equayes.utils` you can import `CONFIG`, `CONSTANTS`, and `PARAMETERS` as d
 - `CONSTANTS` are just a subset of `CONFIG` under the level *constants* in that file (for convinience)
 - `PARAMETERS` dictionary stores configuration key/values pairs defined in `parameters.yml` file(s)
 
-
 ## base vs. local folder
 
 1. **same named files are merged**  
@@ -23,6 +22,7 @@ From `equayes.utils` you can import `CONFIG`, `CONSTANTS`, and `PARAMETERS` as d
 so e.g. sensitive or device-based configuration should be defined in local config while the base folder is meant to land on GitHub.
 
 ## example
+
 Note:
 Changes in your config require a kernel reload to be importable via:
 

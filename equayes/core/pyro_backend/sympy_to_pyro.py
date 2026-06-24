@@ -1,17 +1,33 @@
+import warnings
+
 import pyro
 import pyro.distributions as dist
 import sympy as sp
 import torch
 from sympy.utilities.lambdify import lambdify
+from torch.jit import TracerWarning
+
+from equayes.core import constraints
+from equayes.utils import log
+
+logger = log.getLogger(__name__)
 
 
-def create_pyro_model(sympy_expr: sp.Expr, x_symbols: list, theta_symbols: list, output_dim: int):
+def create_pyro_model(
+    sympy_expr: sp.Expr,
+    x_symbols: list,
+    theta_symbols: list,
+    latent_variables: list,
+    latent_variable_constraints: dict[sp.Symbol, constraints.Constraint],
+    output_dim: int,
+):
     """Creates a Pyro probabilistic model from a parameterized SymPy expression.
 
     Args:
         sympy_expr (sp.Expr): The parameterized SymPy expression representing the forward model.
         x_symbols (list): List of SymPy symbols representing the input features X.
         theta_symbols (list): List of SymPy symbols representing the learnable parameters theta.
+        latent_variables (list): List of SymPy symbols representing symbols in the `sympy_expr` that shall be treated as latent variables.
         output_dim (int): The dimensionality of the output (number of target columns).
 
     Returns:
@@ -19,9 +35,9 @@ def create_pyro_model(sympy_expr: sp.Expr, x_symbols: list, theta_symbols: list,
     """
 
     # 1. Compile SymPy expression to a PyTorch-compatible function
-    # We combine arguments so the function signature is (*x_inputs, *theta_inputs)
+    # We combine arguments so the function signature is (*x_inputs, *theta_inputs + *latent_variables)
     # 'modules=torch' ensures math operations (sin, exp, etc.) use torch equivalents
-    torch_func = lambdify(x_symbols + theta_symbols, sympy_expr, modules="torch")
+    torch_func = lambdify(x_symbols + theta_symbols + latent_variables, sympy_expr, modules="torch")
 
     def model(x_data: torch.Tensor | None, y_data: torch.Tensor | None = None):
         """
@@ -30,36 +46,58 @@ def create_pyro_model(sympy_expr: sp.Expr, x_symbols: list, theta_symbols: list,
         y_data: Tensor of shape (Batch, output_dim) [Optional, for training]
         # ToDo: if all broadcasting is correct needs to be evaluated
         """
-
-        N = (
-            y_data.shape[0] if y_data is not None else 1
-        )  # during inference, y must be given and y_data.shape[0] ==  x_data.shape[0] if x_data is not None
-        N = x_data.shape[0] if x_data is not None else N  # for Predictive samples, y is None, but x_data can be given
+        with warnings.catch_warnings():  # ignore fixed shape warning on using JIT-compilation
+            warnings.simplefilter("ignore", category=TracerWarning)
+            N = (
+                y_data.shape[0] if y_data is not None else 1
+            )  # during inference, y must be given and y_data.shape[0] ==  x_data.shape[0] if x_data is not None
+            N = x_data.shape[0] if x_data is not None else N  # for Predictive samples, y is None, but x_data can be given
         # 2. Sample Theta (Priors)
         # User Constraint: theta_i ~ N(0, 1000)
         # Note: Normal(loc, scale). Variance=1000 implies scale=sqrt(1000) ≈ 31.62
         theta_samples = []
-        theta_scale = torch.tensor(31.62)
+        theta_scale = 31.62
 
-        for i, sym in enumerate(theta_symbols):
-            t_val = pyro.sample(
-                f"theta_{sym.name}", dist.Normal(0.0, theta_scale).expand([1]).to_event(1)
-            )  # shape (1,) or (particles,)
-            if t_val.shape != () and t_val.shape[0] > 1:
-                t_val = t_val.view(-1, 1, 1)
+        with warnings.catch_warnings():  # ignore fixed shape warning on using JIT-compilation
+            warnings.simplefilter("ignore", category=TracerWarning)
+            for i, sym in enumerate(theta_symbols):
+                t_val = pyro.sample(
+                    f"theta_{sym.name}", dist.Normal(0.0, theta_scale).expand([1]).to_event(1)
+                )  # shape (1,) or (particles,)
+                if len(t_val.shape) > 0 and t_val.shape[0] > 1:
+                    t_val = t_val.view(-1, 1, 1)
+                else:
+                    t_val = t_val.view(-1, 1)
+                theta_samples.append(t_val)
+            for i, sym in enumerate(latent_variables):
+                t_val = pyro.sample(
+                    f"theta_{sym.name}_unconstrained", dist.Normal(0.0, theta_scale).expand([1]).to_event(1)
+                )  # shape (1,) or (particles,)
+                if sym in latent_variable_constraints.keys():
+                    match latent_variable_constraints[sym]:
+                        case constraints.Constraint.POSITIVE:
+                            t_val = torch.exp(t_val)
+                        case constraints.Constraint.NEGATIVE:
+                            t_val = -torch.exp(t_val)
+                        case _:
+                            raise NotImplementedError(f"Constraint: {latent_variable_constraints[sym]} not implemented!")
+                if len(t_val.shape) > 0 and t_val.shape[0] > 1:
+                    t_val = t_val.view(-1, 1, 1)
+                else:
+                    t_val = t_val.view(-1, 1)
+                theta_samples.append(t_val)
+
+            # 3. Sample Epsilon (Noise Sigma)
+            # We assume independent noise per output dimension M.
+            # We use a HalfNormal prior to ensure positivity.
+            # todo: Remark, if the functions output is 1d, but output_dim > 1, the resulting output dim of the model is output-dim. If this is beneficial or creates confusion (i.e. an exception would be appropriate) needs to be discussed
+            epsilon = pyro.sample(
+                "epsilon", dist.HalfNormal(1.0).expand([output_dim]).to_event(1)
+            )  # shape (1,) or (particles,1)
+            if len(epsilon.shape) > 0 and epsilon.shape[0] > 1:
+                epsilon = epsilon.view(-1, 1, 1)
             else:
-                t_val = t_val.view(-1, 1)
-            theta_samples.append(t_val)
-
-        # 3. Sample Epsilon (Noise Sigma)
-        # We assume independent noise per output dimension M.
-        # We use a HalfNormal prior to ensure positivity.
-        # todo: Remark, if the functions output is 1d, but output_dim > 1, the resulting output dim of the model is output-dim. If this is beneficial or creates confusion (i.e. an exception would be appropriate) needs to be discussed
-        epsilon = pyro.sample("epsilon", dist.HalfNormal(1.0).expand([output_dim]).to_event(1))  # shape (1,) or (particles,1)
-        if epsilon.shape != () and epsilon.shape[0] > 1:
-            epsilon = epsilon.view(-1, 1, 1)
-        else:
-            epsilon = epsilon.view(-1, 1)
+                epsilon = epsilon.view(-1, 1)
         # We split x_data into columns to feed into the lambdified function
         # x_args will be a list of (N,1)) tensors
         if x_data is not None:

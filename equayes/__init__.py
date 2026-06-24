@@ -19,4 +19,5 @@ except:
 # the class Equayes is implemented.
 # This means, we make module level objects importable at package level.
 from .core.equayes import Equayes
+from .core.constraints import Constraint
 from .utils import CONFIG, PARAMETERS, PROJECT_ROOT

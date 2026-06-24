@@ -1,3 +1,4 @@
+from enum import Enum
 from typing import Optional
 
 import arviz as az
@@ -7,6 +8,7 @@ import pyro.infer.autoguide
 import pyro.optim
 import sympy as sp
 import torch
+import xarray
 from pyro.infer import (
     MCMC,
     NUTS,
@@ -18,6 +20,7 @@ from pyro.infer import (
 from pyro.infer.autoguide import init_to_value
 from pyro.infer.mcmc.util import select_samples
 
+from equayes.core import constraints
 from equayes.core.pyro_backend import sympy_to_pyro as sp_to_pyro
 from equayes.core.pyro_backend import utils as pyro_utils
 from equayes.core.sympy_backend import utils as sp_utils
@@ -49,14 +52,16 @@ class Equayes:
         self,
         expr: sp.Expr,
         input_symbols: list[sp.Symbol],
+        latent_variables: list[sp.Symbol] = [],
+        latent_variable_constraints: Optional[dict[sp.Symbol, constraints.Constraint]] = None,
         output_dim=1,
         inference_method_name: str = "mcmc",
         kernel_name: str = "nuts",
-        mcmc_samples: int = 1000,
-        mcmc_warmup_samples: int = 1000,
+        mcmc_samples: int = 2000,
+        mcmc_warmup_samples: int = 1500,
         mcmc_chains: int = 1,
         mcmc_initial_step_size: float = 1e-2,
-        vi_iter: int = 1000,
+        vi_iter: int = 3000,
         vi_lr: float = 1e-2,
         vi_lrd: float = 1.0,
         vi_particles: int = 1,
@@ -74,29 +79,34 @@ class Equayes:
                 features (independent variables) of the model. The order of the symbols must
                 match the column order of the input tensor provided during fitting.
 
+            latent_variables (list[sp.Symbol]): A list of SymPy symbols corresponding to symbols
+                in expr that shall be treated as random (latent) variables. Fixed prior distributions are assigned to
+                these variables. Defaults to [].
+
+            latent_variable_constraints (dict[sp.Symbol, constraints.Constraint]): Constraints to limit the
+                support of variables defined in `latent_variables`. Defaults to empty dict.
+
             output_dim (int, optional): The dimensionality of the model's output. This determines
                 the shape of the likelihood and predictive samples. Defaults to 1.
 
             inference_method_name (str, optional): The inference strategy used to fit the model.
-                Supported options are:
-                - "mcmc": Markov Chain Monte Carlo sampling
-                - "vi": Variational Inference
+                Supported options are: "mcmc" (Markov Chain Monte Carlo sampling) and "vi"(Variational Inference).
                 Defaults to "mcmc".
 
             kernel_name (str, optional): The MCMC transition kernel used when
                 `inference_method="mcmc"`. Supported options are:
-                - "nuts": No-U-Turn Sampler (Hamiltonian Monte Carlo variant)
-                - "random_walk": Random Walk Metropolis-Hastings
+                "nuts" (No-U-Turn Sampler (Hamiltonian Monte Carlo variant))
+                "random_walk" (gradient free random walk Metropolis-Hastings).
                 Defaults to "nuts".
 
             mcmc_samples (int, optional): The number of posterior samples to draw
                 after warm-up when using MCMC. Ignored if `inference_method="vi"`.
-                Defaults to 1000.
+                Defaults to 2000.
 
             mcmc_warmup_samples (int, optional): The number of warm-up (burn-in) steps
                 for MCMC sampling. These samples are discarded and used only for
                 adaptation of the sampler. Ignored if `inference_method="vi"`.
-                Defaults to 1000.
+                Defaults to 1500.
 
             mcmc_chains (int, optional): The number of independent MCMC chains to run.
                 Increasing this value improves convergence diagnostics but increases
@@ -110,7 +120,7 @@ class Equayes:
 
             vi_iter (int, optional): The number of optimization iterations used
                 when `inference_method="vi"`. Ignored if `inference_method="mcmc"`.
-                Defaults to 1000.
+                Defaults to 3000.
 
             vi_lr (float, optional): The learning rate for the optimizer used in
                 Variational Inference. Controls the step size of gradient-based
@@ -137,11 +147,13 @@ class Equayes:
                 initialization of numerical constants that are converted to random variables in expr.
                 If not provided, the initial value is the constant given in the expression.
                 Defaults to None.
-
         """
 
         self.expr_sp = expr
         self.input_symbols = input_symbols
+        self.latent_variables = latent_variables
+        self.latent_variable_constraints = latent_variable_constraints if latent_variable_constraints is not None else {}
+        self.output_dim = output_dim
         self.inference_method_name = inference_method_name  # in (mcmc, vi)
         self.kernel_name = kernel_name  # in (nuts, random_walk)
         self.mcmc_samples = mcmc_samples
@@ -166,7 +178,9 @@ class Equayes:
             self._expr_sp_parameterized,
             self.input_symbols,
             list(self._exp_param_values.keys()),
-            output_dim=output_dim,
+            self.latent_variables,
+            self.latent_variable_constraints,
+            output_dim=self.output_dim,
         )
         self._setup_inference()
 
@@ -176,7 +190,9 @@ class Equayes:
         Args:
             None
         """
-        self.initial_params = pyro_utils.get_initial_param_dict(self._exp_param_values, n_chains=self.mcmc_chains)
+        self.initial_params = pyro_utils.get_initial_param_dict(
+            self._exp_param_values, self.latent_variables, n_chains=self.mcmc_chains
+        )
 
         match self.inference_method_name:
             case "mcmc":
@@ -311,7 +327,7 @@ class Equayes:
         Returns:
             dict: A dictionary containing diagnostic metrics (like effective sample size and Gelman-Rubin statistics for MCMC, and the losses for VI).
         """
-        if self.mcmc_ is not None:
+        if self.inference_method_name == "mcmc":
             if print_summary:
                 self.mcmc_.summary()
             return self.mcmc_.diagnostics()
@@ -319,29 +335,42 @@ class Equayes:
             return {"loss": self.losses_}
 
     def score(self, X, y=None):
-        raise NotImplementedError("score() method not implemented")
+        """Computes the expected log pointwise evidence given the learned posterior. (Higher is better.)
 
-    def get_posterior(self) -> az.InferenceData | torch.distributions.Distribution:
-        """If MCMC, extracts the posterior samples as an ArviZ InferenceData object for advanced analysis and plotting.
+        Args:
+            X (torch.Tensor): Unused - calculates the score on the training data.
+            y (torch.Tensor): Unused - calculates the score on the training data.
+
+        Returns:
+            float: MCMC: the mean log-likelihood of the data. VI: the final ELBO
+        """
+        if self.svi_ is not None:
+            return -self.losses_[-1]
+        elif self.mcmc_ is not None:
+            inference_dt = self.get_posterior()
+            # Assuming log_likelihood is available in the InferenceData
+            return inference_dt["log_likelihood"].mean() if "log_likelihood" in inference_dt.keys() else torch.inf
+        else:
+            raise ValueError("Model not fitted with VI or MCMC.")
+
+    def get_posterior(self) -> xarray.DataTree | torch.distributions.Distribution:
+        """If MCMC, extracts the posterior samples as an ArviZ DataTree object for advanced analysis and plotting.
         If VI, return the variational distribution.
 
         Returns:
             arviz.InferenceData | torch.distributions.Distribution: The posterior distribution.
         """
         if self.mcmc_ is not None:
-            try:
-                return az.from_pyro(self.mcmc_)
-            except KeyError as e:  # Automatic RandomWalk kernel fails, construct the arviz object manually.
-                samples = self.mcmc_.get_samples(group_by_chain=True)
-                posterior = {k: v.detach().cpu().numpy() for k, v in samples.items()}
-                return az.from_dict(posterior=posterior)
+            samples = self.mcmc_.get_samples(group_by_chain=True)
+            posterior = {k: v.detach().cpu().numpy() for k, v in samples.items()}
+            return az.from_dict({"posterior": posterior})
         return self._guide.get_posterior()
 
-    def load_posterior_arviz(self, idata: az.InferenceData):
+    def load_posterior_arviz(self, inference_dt: xarray.DataTree):
         """Set the samples of the internal mcmc object to the given one. This allows to use the predict() method without calling fit() first.
 
         Args:
-            idata (az.InferenceData): The posterior data.
+            inference_dt (xarray.DataTree): The posterior data.
         """
         if self.mcmc_ is None:
             self.mcmc_ = MCMC(
@@ -352,7 +381,7 @@ class Equayes:
                 initial_params=self.initial_params,
             )
             self._setup_mcmc()
-        posterior = {var: torch.tensor(idata.posterior[var].values) for var in idata.posterior.data_vars}
+        posterior = {var: torch.tensor(inference_dt["posterior"][var].values) for var in inference_dt["posterior"].data_vars}
         self.mcmc_._samples = posterior
 
     def render_model(self, x_dummy, filename=None):
@@ -363,3 +392,32 @@ class Equayes:
             filename (str | None, optional): The file path to save the rendered graph (e.g., 'model.png'). Defaults to None.
         """
         pyro.render_model(self._pyro_model, (x_dummy,), filename=filename)
+
+    def get_inference_tag(self):
+        """Create a string tag containing all hyperparameters of the current inference configuration. This is a utility method to create unique namings for different evaluations with equayes.
+
+        Returns:
+            The string tag.
+        """
+        if self.inference_method_name == "mcmc":
+            return f"{self.inference_method_name}_{self.kernel_name}_s{self.mcmc_samples}_w{self.mcmc_warmup_samples}_chains{self.mcmc_chains}"
+        else:
+            return (
+                f"{self.inference_method_name}_iter{self.vi_iter}_particles{self.n_particles}_lr{self.vi_lr}_lrd{self.vi_lrd}"
+            )
+
+    def get_latent_variable_keys(self) -> list[sp.Symbol]:
+        """Retrieves a list of all latent variables *except* the noise random variable 'epsilon'.
+
+        Returns:
+            list(sp.Symbol): List of all latent variables.
+        """
+        return list(self._exp_param_values.keys()) + list(self.latent_variables)
+
+    def get_initial_param_dict(self) -> dict[str, torch.Tensor]:
+        """Retrieve the initial params of the latent variables, i.e. the deterministic values in self.expr and self.latent_variables.
+
+        Returns:
+            dict(str, torch.Tensor): The initial params. values are of shape: MCMC: (n_chains, 1), VI: (1,)
+        """
+        return self.initial_params
